@@ -2,3 +2,5 @@
 *.pyc
 fab.log
 Pipfile.lock
+build
+dist

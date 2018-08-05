@@ -11,30 +11,6 @@ from api.ssl_certs import (
     uninstall_acme
 )
 
-"""
-
-Commands to invoke in webfaction servers.
-=========================================
-
-## Account and server level
-
-> account/tasks.py
-  - install_acme
-  - uninstall_acme
-  - secure_domains
-  - check websites
-
-## App level
-
-> app/tasks.py
-   - django_update
-   - check_secure_versions
-   - provision
-   - teardown
-   - deploy
-
-"""
-
 logging.basicConfig(
     filename=os.path.join(
         os.path.dirname(

@@ -1,0 +1,4 @@
+*~
+*.pyc
+fab.log
+Pipfile.lock

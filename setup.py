@@ -15,6 +15,7 @@ setup(
                  "webfaction using Python and Fabric 2"),
     url="https://github.com/moaxey/WebfactionHelpers",
     packages=["wf_helpers",],
+    python_requires='>3.6.6',
     install_requires=[
         "fabric",
         "dnspython",
@@ -26,6 +27,9 @@ setup(
     long_description=read("README.rst"),
     classifiers=[
         "Development Status :: 3 - Alpha",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
         "Intended Audience :: Developers",
         "Topic :: Software Developemnt",
         "Topic :: Software Developemnt :: Build Tools",

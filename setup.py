@@ -14,7 +14,7 @@ setup(
     description=("Scripts to help provision, configure and deply to"
                  "webfaction using Python and Fabric 2"),
     url="https://github.com/moaxey/WebfactionHelpers",
-    packages=["wf_helpers", "wf_helpers.api"],
+    packages=["wf_helpers",],
     install_requires=[
         "fabric",
         "dnspython",

@@ -31,6 +31,13 @@ Available tasks:
   check-websites   Check http response mode of all configured websites.
   secure-domains   Validate, generate and install Letsencrypt certificates.
 ```
+> $ pipenv run fab -H Web39.webfaction.com check-websites accountname
+```
+Loading .env environment variables...
+API password:
+Checking: https://example.com/
+Available: https://example.com/
+```
 
 Development
 -----------

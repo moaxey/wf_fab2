@@ -9,12 +9,12 @@ def read(fname):
     return open(path.join(here, fname)).read()
 
 setup(
-    name="wf_helpers",
+    name="webfaction_fab2",
     version="0.0.1",
     description=("Scripts to help provision, configure and deply to"
                  "webfaction using Python and Fabric 2"),
     url="https://github.com/moaxey/WebfactionHelpers",
-    packages=["wf_helpers",],
+    packages=["wf_fab2",],
     python_requires='>3.6.6',
     install_requires=[
         "fabric",

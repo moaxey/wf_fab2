@@ -1,6 +1,0 @@
-README.rst
-setup.py
-webfaction_helpers.egg-info/PKG-INFO
-webfaction_helpers.egg-info/SOURCES.txt
-webfaction_helpers.egg-info/dependency_links.txt
-webfaction_helpers.egg-info/top_level.txt

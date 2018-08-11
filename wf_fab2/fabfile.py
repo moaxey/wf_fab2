@@ -2,10 +2,10 @@
 from fabric import task
 import os
 import logging
-from wf_helpers.util import ensure_webfaction, is_dir
-from wf_helpers.connection import start_session
-from wf_helpers.websites import website_checker
-from wf_helpers.ssl_certs import (
+from wf_fab2.util import ensure_webfaction, is_dir
+from wf_fab2.connection import start_session
+from wf_fab2.websites import website_checker
+from wf_fab2.ssl_certs import (
     wait_dns_update, renew_certificate, remove_txt_records,
     install_certificate, issue_certificate, install_acme,
     uninstall_acme

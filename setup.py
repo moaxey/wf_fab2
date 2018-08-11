@@ -31,10 +31,6 @@ setup(
         "Programming Language :: Python :: 3.6",
         "Programming Language :: Python :: 3.7",
         "Intended Audience :: Developers",
-        "Topic :: Software Developemnt",
-        "Topic :: Software Developemnt :: Build Tools",
-        "Topic :: Software Developemnt",
-        "Topic :: System :: System Administration",
         "License :: OSI Approved :: MIT License",
     ],
 )

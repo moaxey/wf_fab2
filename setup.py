@@ -15,7 +15,7 @@ setup(
                  "webfaction using Python and Fabric 2"),
     url="https://github.com/moaxey/wf_fab2",
     packages=["wf_fab2",],
-    python_requires='>3.6.6',
+    python_requires='>3.6',
     install_requires=[
         "fabric",
         "dnspython",

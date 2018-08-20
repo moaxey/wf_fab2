@@ -10,7 +10,7 @@ Installation
 
 You could install this in your system python3, into your virtualnv or into your pipenv as a dev dependency
 
-> $ pip install --dev webfaction_fab2
+> $ pipenv install --dev webfaction_fab2
 
 Usage
 -----
@@ -26,10 +26,13 @@ And then start using the commands
  Loading .env environment variables...
 Available tasks:
 
+Available tasks:
+
   acme-install     Install acme.sh for Letsencrypt certificates on a webfaction host.
-  acme-uninstall   Uninstall acme.sh from a webfaction host.
   check-websites   Check http response mode of all configured websites.
-  secure-domains   Validate, generate and install Letsencrypt certificates.
+  list-websites    List all websites their linked apps and subdomains.
+  secure-website   Issue certificates for a website and install with acme_webfaction
+
 ```
 > $ pipenv run fab -H Web39.webfaction.com check-websites accountname
 ```
@@ -37,6 +40,20 @@ Loading .env environment variables...
 API password:
 Checking: https://example.com/
 Available: https://example.com/
+Checking: https://anotherexample.com/
+/Users/mjoakes/.local/share/virtualenvs/webfaction_helpers-RUB6JD7n/lib/python3.6/site-packages/urllib3/connectionpool.py:857: InsecureRequestWarning: Unverified HTTPS request is being made. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#ssl-warnings
+  InsecureRequestWarning)
+Available: https://anotherexample.com/ Invalid Certificate
+```
+> $ pipenv run fab -H Web39.webfaction.com list-websites accountname
+```
+API password:
+example_site_name [['exampleapp', '/']] ['example.com', 'www.example.com']
+anotherexample_site_name [['anotherexampleapp', '/']] ['anotherexample.com', 'www.anotherexample.com']
+```
+> $ pipenv run fab -H Web39.webfaction.com ssecure-website accountname anotherexample_site_name
+```
+
 ```
 
 Development

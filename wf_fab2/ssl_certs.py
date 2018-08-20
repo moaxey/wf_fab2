@@ -4,189 +4,161 @@ import os
 import logging
 import time
 import dns.resolver
+from io import StringIO
+from .util import ensure_webfaction
 
-# set to '--test' to issue certiicates against letsencrypt staging environment
-ACME_MODE='' #--test'
 
-def install_acme(c, dest):
+def install_acme_webfaction(c):
+    """ Install acme.sh and acme_webfaction.py on a host """
     logging.debug('install_acme')
-    if not is_dir(c, dest):
-        c.run(f'mkdir -p {dest}')
-    with c.cd(dest):
-        install_dir = 'acme.sh'
-        if not is_dir(c, install_dir):
-            c.run("git clone 'https://github.com/Neilpang/acme.sh.git'")
-        with c.cd(install_dir):
-            c.run('./acme.sh --install')
-            c.run('./acme.sh --upgrade  --auto-upgrade')
+    home = c.run("echo $HOME").stdout.strip()
+    c.run(f"mkdir -p {home}/src {home}/bin")
+    with c.cd(f"{home}/src"):
+        c.run("curl https://get.acme.sh | sh")
+        c.run("rm master.zip", warn=True)
+        c.run("wget https://github.com/gregplaysguitar/acme-webfaction/archive/master.zip")
+        c.run("unzip master.zip")
+        c.run("rm master.zip")
+        c.run(f"cp acme-webfaction-master/acme_webfaction.py {home}/bin")
+        c.run("rm -r acme-webfaction-master")
+    c.run(f"chmod +x {home}/bin/acme_webfaction.py")
 
 
-def uninstall_acme(c, dest):
-    logging.debug('uninstall_acme')
-    if not is_dir(c, dest):
-        raise ValueError(f'Acme not installed at {dest}')
-    with c.cd(dest):
-        install_dir = 'acme.sh'
-        if not is_dir(c, install_dir):
-            raise ValueError(f'Acme not installed at {install_dir}')
-        with c.cd(install_dir):
-            c.run('./acme.sh --uninstall')
-
-
-def clean_acme_line(line):
-    logging.debug(f'clean_acme_line {line}')
-    line = line.replace('\x1b[1;31;40m', '')
-    line = line.replace('\x1b[1;31;32m', '')
-    line = line.replace('\x1b[0m', '')
-    return line
-
-
-def issue_certificate(
-        c, server, session_id, primary_domain, *multiple_domains
+def cert_issue_install_renew(
+        c,
+        server,
+        session_id,
+        account,
+        machine,
+        website_name,
+        password,
+        force=False
 ):
-    logging.debug('issue certificate')
-    command = f'.acme.sh/acme.sh --issue --dns --yes-I-know-dns-manual-mode-enough-go-ahead-please {ACME_MODE} -d {primary_domain}'
-    result = c.run(
-        command + ' '.join(
-            [f'-d {d}' for d in multiple_domains]
-        ),
-        warn=True
+    """ Issue a certificate for a website and set up auto renewal. """
+    # vaidate web_site_name, find the path to the app at /
+    home = c.run("echo $HOME").stdout.strip()
+    website_details = get_website_details(server, session_id, website_name)
+    root_app_name = [
+        a[0] for a in website_details['website_apps'] if a[1] == '/'
+    ][0]
+    apps = server.list_apps(session_id)
+    root_app_details = [a for a in apps if a['name'] == root_app_name][0]
+    if re.match(r'(django|rails)', root_app_details['type']):
+        acme_web_root = f"{home}/temp"
+        c.run(f"mkdir -p {acme_web_root}")
+        configure_apache_for_alias(c, root_app_name, home)
+    else:
+        acme_web_root = f"{home}/webapps/{root_app_name}"
+    sorted_domains = sorted(website_details['subdomains'], key=len)
+    domain_args = get_domain_args(sorted_domains)
+    do_force = "--force" if force else ""
+    installation_transcript = c.run((
+        f"{home}/.acme.sh/acme.sh --issue {do_force} -w '{acme_web_root}' "
+        f"{domain_args}"
+    ), warn=True).stdout
+    certificate_detail = api_install_cert(
+        c, server, session_id, *sorted_domains
     )
-    lines = [l[31:] for l in result.stdout.split('\n')]
-    existing_domains = {
-        d['domain']: d for d in server.list_domains(session_id)
-    }
-    records = []
-    while len(lines) > 0:
-        line = clean_acme_line(lines.pop(0))
-        logging.debug('lines {} "{}"'.format(len(lines), line))
-        if line == 'Add the following TXT record:':
-            line = clean_acme_line(lines.pop(0))
-            newsubdom = re.search(
-                r"(.+?): '(.+?)'", line
-            ).groups()[1]
-            logging.debug('adding {}'.format(newsubdom))
-            sd = None
-            dn = None
-            ed = list(existing_domains.keys())
-            while sd is None and dn is None:
-                ted = ed.pop()
-                tedidx = newsubdom.find(ted)
-                if len(ted) + newsubdom.find(ted) == len(newsubdom):
-                    sd = newsubdom[:tedidx - 1]
-                    dn = ted
-            create_d = existing_domains[ted]
-            create_d['subdomains'].append(sd)
-            create_domain(
-                server,
-                session_id,
-                ted,
-                *create_d['subdomains']
+    acme_install_renew(
+        c, server, session_id, account, machine, password, sorted_domains
+    )
+
+def get_domain_args(sorted_domains):
+    return "-d " + " -d ".join(sorted_domains)
+
+
+def get_cert_name(server, session_id, sorted_domains):
+    certs = server.list_certificates(session_id)
+    for cert in certs:
+        if cert['domains'] == ','.join(sorted_domains):
+            return cert['name']
+    raise ValueError('No certificate found for domains: {domain_args}')
+
+
+def acme_install_renew(
+        c, server, session_id, account, machine, password, sorted_domains
+):
+    home = c.run("echo $HOME").stdout.strip()
+    domain_args = get_domain_args(sorted_domains)
+    cert_name = get_cert_name(server, session_id, sorted_domains)
+    reloadcmd = f"WF_SERVER='{machine}' WF_USER='{account}' WF_PASSWORD='{password}'  WF_CERT_NAME='{cert_name}' {home}/bin/acme_webfaction.py"
+    c.run(f"{home}/.acme.sh/acme.sh --install-cert {domain_args} --reloadcmd \"{reloadcmd}\"")
+
+
+def configure_apache_for_alias(c, root_app_name, home):
+    root_app_dir = f"{home}/webapps/{root_app_name}"
+    remote_httpd_conf = f"{root_app_dir}/apache2/conf/httpd.conf"
+    httpd_conf = c.run(
+        f"cat '{remote_httpd_conf}'"
+    ).stdout.strip()
+    load_module = 'LoadModule alias_module      modules/mod_alias.so'
+    well_known_alias = f"Alias /.well-known/ {home}/temp/.well-known/"
+    httpd_conf = apache_conf_insert(httpd_conf, load_module)
+    httpd_conf = apache_conf_insert(httpd_conf, well_known_alias)
+    httpd_conf_file = StringIO(httpd_conf)
+    c.put(httpd_conf_file, remote_httpd_conf)
+    c.run(f"{root_app_dir}/apache2/bin/restart")
+
+
+def get_website_details(server, session_id, website_name):
+    websites = server.list_websites(session_id)
+    website_names = [s['name'] for s in websites]
+    if website_name not in website_names:
+        raise ValueError(
+            "Unrecognised website name. Available websites are: {}".format(
+                ', '.join(website_names)
             )
-            # Add DNS override
-            line = clean_acme_line(lines.pop(0))
-            txt_value = re.search(r"(.+?): '(.+?)'", line).groups()[1]
-            logging.info('txt_value {} -- {}'.format(txt_value, line))
-            if txt_value not in get_txt_records_for(newsubdom):
-                create_dns_override(
-                    server,
-                    session_id,
-                    newsubdom,
-                    '',
-                    '',
-                    '',
-                    '',
-                    txt_value,
-                    '',
-                    ''
-                )
-            records.append((newsubdom, txt_value))
-    return records
-
-
-def get_txt_records_for(domain):
-    logging.debug(f'get_txt_records_for {domain}')
-    try:
-        records = [
-            str(n).strip('"') for n in dns.resolver.query(domain, 'TXT')
-        ]
-    except dns.resolver.NXDOMAIN:
-        records = []
-    except dns.resolver.NoAnswer:
-        records = []
-    return records
-
-
-def wait_dns_update(records):
-    logging.debug('wait_dns_update')
-    while len(records) > 0:
-        domain, txtrecord = records.pop()
-        answers = get_txt_records_for(domain)
-        count = 0
-        while txtrecord not in answers:
-            time.sleep(60)
-            count += 1
-            if count > 1:
-                print('waited {} minutes for DNS propagation'.format(count))
-                answers = get_txt_records_for(domain)
-                logging.debug(answers)
-
-
-def remove_txt_records(server, session_id, records, delete_domains=False):
-    logging.debug('remove_txt_records')
-    for r in records:
-        delete_dns_override(
-            server,
-            session_id,
-            r[0],
-            '',
-            '',
-            '',
-            '',
-            r[1],
-            '',
-            ''
         )
-        
-
-def renew_certificate(c, server, session_id, primary_domain, force=False):
-    logging.debug('renew_certificate')
-    force = '' if not force else '--force'
-    command = '.acme.sh/acme.sh --renew {} -d {} {ACME_MODE} --yes-I-know-dns-manual-mode-enough-go-ahead-please'.format(
-        force, primary_domain
-    )
-    result = c.run(command, warn=True)
-    return result.exited
+    return [w for w in websites if w['name'] == website_name][0]
 
 
-def install_certificate(c, server, session_id, primary_domain):
+def apache_conf_insert(conf, line):
+    """ Crudely add apache directives near other similar directives. """
+    sections = conf.split('\n\n')
+    directive, value = line.split(' ', 1)
+    added = False
+    for scount in range(len(sections)):
+        if sections[scount].find(directive) >= 0:
+            if sections[scount].find(line) < 0:
+                sections[scount] += '\n' + line
+            added = True
+            break
+    if not added:
+        sections.append(line)
+    return '\n\n'.join(sections)
+
+
+def api_install_cert(c, server, session_id, *sorted_domains):
     logging.debug('install_certificate')
+    primary_domain = sorted_domains[0]
     certfolder = os.path.join('.acme.sh', primary_domain)
     certificate = str(
         c.run(
             'cat "{}"'.format(
-                os.path.join(certfolder, '{}.cer'.format(primary_domain))
+                os.path.join(certfolder, f'{primary_domain}.cer')
             )
-        )
+        ).stdout
     )
     private_key = str(
         c.run(
             'cat "{}"'.format(
-                os.path.join(certfolder, '{}.key'.format(primary_domain))
+                os.path.join(certfolder, f'{primary_domain}.key')
             )
-        )
+        ).stdout
     )
     intermediates = str(
         c.run(
             'cat "{}"'.format(
                 os.path.join(certfolder, 'fullchain.cer')
             )
-        )
+        ).stdout
     )
+    cert_name = get_cert_name(server, session_id, sorted_domains)
     resp = create_or_update_certificate(
         server,
         session_id,
         primary_domain,
+        cert_name,
         certificate,
         private_key,
         intermediates,
@@ -197,26 +169,25 @@ def create_or_update_certificate(
         server,
         session_id,
         primary_domain,
+        cert_name,
         certificate,
         private_key,
         intermediates,
         ):
     logging.debug('create_or_update_certificate')
-    name = re.sub(r'[^a-z0-9A-Z]', '', primary_domain)
     current_certificates = server.list_certificates(session_id)
     for ccert in current_certificates:
-        if ccert['name'] == name:
+        if ccert['name'] == cert_name:
             return server.update_certificate(
                 session_id,
-                name,
+                cert_name,
                 certificate,
                 private_key,
                 intermediates,
-
             )
     return server.create_certificate(
         session_id,
-        name,
+        cert_name,
         certificate,
         private_key,
         intermediates,

@@ -2,13 +2,12 @@
 from fabric import task
 import os
 import logging
+from getpass import getpass
 from wf_fab2.util import ensure_webfaction, is_dir
 from wf_fab2.connection import start_session
 from wf_fab2.websites import website_checker
 from wf_fab2.ssl_certs import (
-    wait_dns_update, renew_certificate, remove_txt_records,
-    install_certificate, issue_certificate, install_acme,
-    uninstall_acme
+    install_acme_webfaction, cert_issue_install_renew, acme_install_renew
 )
 
 logging.basicConfig(
@@ -22,38 +21,52 @@ logging.basicConfig(
 )
 
 
-
 @task
-def acme_install(c, source_directory='src'):
-    "Install acme.sh for Letsencrypt certificates on a webfaction host."
-    ensure_webfaction(c)
-    install_acme(c, source_directory)
-
-@task
-def acme_uninstall(c, source_directory='src'):
-    "Uninstall acme.sh from a webfaction host."
-    ensure_webfaction(c)
-    uninstall_acme(c, source_directory)
-
-@task
-def secure_domains(
-        c,
-        account,
-        primary_domain,
-        *multiple_domains
-):
-    """ Validate, generate and install Letsencrypt certificates. """
+def acme_install(c, account):
+    """ Install acme.sh for Letsencrypt certificates on a webfaction host. """
     machine = ensure_webfaction(c)
     server, session_id = start_session(account, machine)
-    records = issue_certificate(
-        c, server, session_id, primary_domain, *multiple_domains
+    install_acme_webfaction(c)
+
+
+@task(optional=['force'])
+def secure_website(
+        c,
+        account,
+        website_name,
+        force=None,
+):
+    """ Issue certificates for a website and install with acme_webfaction """
+    machine = ensure_webfaction(c)
+    password = getpass('API password: ')
+    server, session_id = start_session(account, machine, password)
+    primary_domain = cert_issue_install_renew(
+        c, server, session_id, account, machine, website_name, password, force
     )
-    wait_dns_update(records)
-    renew_certificate(c, server, session_id, primary_domain)
-    remove_txt_records(server, session_id, records)
-    logging.debug('removed records')
-    install_certificate(c, server, session_id, primary_domain)
-    logging.debug('installed')
+
+
+def acme_renew(c, account, domains):
+    """ Run the renewal process for existing certs based on domains. """
+    machine = ensure_webfaction(c)
+    password = getpass('API password: ')
+    server, session_id = start_session(account, machine, password)
+    sorted_domains = sorted(domains.split(','), key=len)
+    acme_install_renew(
+        c, server, session_id, account, machine, password, sorted_domains
+    )
+
+
+@task
+def list_websites(
+        c,
+        account,
+):
+    """ List all websites their linked apps and subdomains. """
+    machine = ensure_webfaction(c)
+    server, session_id = start_session(account, machine)
+    for site in server.list_websites(session_id):
+        print(site['name'], site['website_apps'], site['subdomains'])
+
 
 @task
 def check_websites(

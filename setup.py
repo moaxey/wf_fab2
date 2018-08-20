@@ -10,7 +10,7 @@ def read(fname):
 
 setup(
     name="webfaction_fab2",
-    version="0.0.2",
+    version="0.0.3",
     description=("Scripts to help provision, configure and deply to"
                  "webfaction using Python and Fabric 2"),
     url="https://github.com/moaxey/wf_fab2",
